@@ -88,6 +88,9 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[1][1:4], ["1", "car", "lai_gan"])
         self.assertAlmostEqual(float(rows[1][rows[0].index("toc_do_kmh")]), 40.0, delta=0.6)
+        # mỗi dòng tự ghi hệ số đã dùng (kể cả khi bạn chỉnh giữa chừng)
+        self.assertEqual(rows[0][-4:], ["bo_he_so", "goc_cui_do", "hfov_do", "k"])
+        self.assertEqual([float(x) for x in rows[1][-3:]], [10.0, 65.0, 1.0])
 
     def test_display_ids_are_sequential(self):
         script = merge(track_script(self.scene, 900, "motorbike", 35.0),
@@ -129,6 +132,19 @@ class PipelineTest(unittest.TestCase):
         pipe.detector.script = track_script(self.scene, 7, "car", 40.0)
         recs = run(pipe, 400)
         self.assertEqual(recs[0].track_id, 1)
+
+    def test_csv_rows_record_the_params_at_the_time(self):
+        pipe = self.make(merge(track_script(self.scene, 1, "car", 40.0),
+                               track_script(self.scene, 2, "car", 40.0, t_start_frame=200, x_m=3.0)))
+        run(pipe, 200)
+        pipe.params = CalibParams(auto_height=False, height_m=7.0, k=1.1, pitch_deg=10.0)   # chỉnh giữa chừng
+        run_more = [pipe.process(np.zeros((FRAME_H, FRAME_W, 3), dtype=np.uint8), k / FPS) for k in range(200, 400)]
+        self.assertTrue(run_more)
+        self.rec.close()
+        with open(self.rec.path, encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        k_values = {float(r[-1]) for r in rows[1:]}
+        self.assertEqual(k_values, {1.0, 1.1})
 
     def test_params_change_applies_next_frame(self):
         pipe = self.make(track_script(self.scene, 1, "car", 40.0))
